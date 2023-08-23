@@ -251,3 +251,7 @@ RegisterCommand("ac", function(src, args, raw)
 	local soundId = tostring(plrVeh) .. "_AC"
 	TriggerServerEvent("ACSoundFX", acValue, NetworkGetNetworkIdFromEntity(plrVeh), soundId)
 end, false)
+
+TriggerEvent("chat:addSuggestion", "/ac", "In-Car Climate Control", {
+	{ name = "AC Level", help = "0 = Off, 1 = Low, 2 = Med, 3 = High" },
+})

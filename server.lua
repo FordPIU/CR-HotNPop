@@ -5,8 +5,6 @@ local Volumes = {
     [3] = 0.3
 }
 RegisterNetEvent("ACSoundFX", function(soundLevel, entityNet, soundId)
-    print("Update Request", soundLevel)
-
     if soundLevel == 0 then
         exports.xsound:Destroy(-1, soundId)
 
@@ -22,7 +20,6 @@ RegisterNetEvent("ACSoundFX", function(soundLevel, entityNet, soundId)
 end)
 
 RegisterNetEvent("ACSoundFXRESET", function()
-    print("Reset Request")
     for entityNet, data in pairs(SoundStorage) do
         exports.xsound:Destroy(data.id)
         data.new = false
