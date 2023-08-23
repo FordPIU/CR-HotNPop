@@ -1,10 +1,13 @@
 fx_version "cerulean"
 game "gta5"
 
-description 'A replacement for the camera logic for Sonorans Traffic Cameras'
+description 'AceK9 Hot-N-Pop'
 author 'Caleb'
 version 'V1'
 
 client_scripts {
-	'client.lua'
+	'client.lua',
+}
+server_scripts {
+	'server.lua'
 }

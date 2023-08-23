@@ -120,7 +120,25 @@
     "SetVehicleSiren",
     "GetNumberOfVehicleDoors",
     "GetVehicleDoorAngleRatio",
-    "GetIsVehicleEngineRunning"
+    "GetIsVehicleEngineRunning",
+    "RollDownWindow",
+    "GetClockMinutes",
+    "GetClockHours",
+    "GetPrevWeatherTypeHashName",
+    "GetClockMonth",
+    "SetTextFont",
+    "SetTextProportional",
+    "SetTextScale",
+    "SetTextColour",
+    "SetTextDropshadow",
+    "SetTextEdge",
+    "SetTextDropShadow",
+    "SetTextOutline",
+    "SetTextEntry",
+    "AddTextComponentString",
+    "DrawText",
+    "NetworkGetEntityFromNetworkId",
+    "GetAllVehicles"
   ],
   "Lua.diagnostics.disable": [
     "unused-function"
