@@ -1,48 +1,37 @@
-local hotnpopVehicles = {
-	[`pdkn1`] = true,
-	[`pdkn2`] = true,
-	[`pdkn3`] = true,
-	[`pdkn4`] = true,
-	[`pdkn5`] = true,
-	[`pdkn6`] = true,
-	[`pdkn7`] = true,
-	[`pdkn8`] = true,
-	[`pdkn9`] = true,
-	[`pdkns1`] = true,
-	[`pdkns2`] = true,
-	[`pdkns3`] = true,
-	[`pdkns4`] = true,
-	[`pdkns5`] = true,
-	[`pdkns6`] = true,
-	[`pdkns7`] = true,
-	[`pdkns8`] = true,
-	[`pdkns9`] = true,
-}
-
-local function areWindowsUp(vehicle)
-	local window_lf = IsVehicleWindowIntact(vehicle, 0)
-	local window_rf = IsVehicleWindowIntact(vehicle, 1)
-	local window_lr = IsVehicleWindowIntact(vehicle, 2)
-	local window_rr = IsVehicleWindowIntact(vehicle, 3)
-	local window_wf = IsVehicleWindowIntact(vehicle, 6)
-	local window_wr = IsVehicleWindowIntact(vehicle, 7)
-
-	if window_lf == 1 and window_rf == 1 and window_lr == 1 and window_rr == 1 and window_wf == 1 and window_wr == 1 then
-		return true
+local function temperatureBlendWithRND(a, b, stepSize)
+	if a > b then
+		return -stepSize
+	elseif a < b then
+		return stepSize
 	else
-		return false
+		return stepSize
 	end
 end
 
-local function areDoorsClosed(vehicle)
-	local numOfDoors = GetNumberOfVehicleDoors(vehicle)
-	for doorIndex = 0, numOfDoors do
-		if GetVehicleDoorAngleRatio(vehicle, doorIndex) > 0.0 then
-			return false
+local function getWindowsUp(vehicle)
+	local windows = { 0, 1, 2, 3, 6, 7 }
+	local windowsUp = 0
+
+	for _, windowIndex in ipairs(windows) do
+		if IsVehicleWindowIntact(vehicle, windowIndex) == 1 then
+			windowsUp = (windowsUp or 0) + 1
 		end
 	end
 
-	return true
+	return windowsUp
+end
+
+local function getDoorsClosed(vehicle)
+	local numOfDoors = GetNumberOfVehicleDoors(vehicle)
+	local doorsClosed = numOfDoors
+
+	for doorIndex = 0, numOfDoors do
+		if GetVehicleDoorAngleRatio(vehicle, doorIndex) > 0.0 then
+			doorsClosed = (doorsClosed or 0) - 1
+		end
+	end
+
+	return numOfDoors, doorsClosed
 end
 
 local function isDogInVehicle(vehicle)
@@ -52,33 +41,12 @@ local function isDogInVehicle(vehicle)
 	if leftRear ~= nil and DoesEntityExist(leftRear) and GetEntityModel(leftRear) == `a_c_shepherd` then
 		return true
 	end
+
 	if rightRear ~= nil and DoesEntityExist(rightRear) and GetEntityModel(rightRear) == `a_c_shepherd` then
 		return true
 	end
+
 	return false
-end
-
-local AirConditioningMultiupliers = {
-	[1] = 2.0,
-	[2] = 3.5,
-	[3] = 5.0
-}
-local function CalculateInternalTemperatureChangeRate(currentTemp, engineOn, windowsDown, airConditioning)
-	local temperatureChangeRate = 0.075 -- Base change rate
-
-	if engineOn and airConditioning ~= 0 then
-		temperatureChangeRate = temperatureChangeRate * AirConditioningMultiupliers[airConditioning]
-	end
-
-	if airConditioning > 0 or windowsDown then
-		if currentTemp > 70 then
-			temperatureChangeRate = temperatureChangeRate * (1 + (currentTemp - 70) / 50)
-		elseif currentTemp < 40 then
-			temperatureChangeRate = temperatureChangeRate * (1 + (40 - currentTemp) / 60)
-		end
-	end
-
-	return temperatureChangeRate
 end
 
 local function triggerHotNPop(vehicle)
@@ -90,6 +58,100 @@ local function triggerHotNPop(vehicle)
 	-- Rear Windows
 	RollDownWindow(vehicle, 2)
 	RollDownWindow(vehicle, 3)
+
+	-- Text to Speech Alert
+	--TriggerServerEvent("HotNPopAlert", GetEntityCoords(vehicle), tostring(vehicle))
+end
+
+local WINDOW_CONFIG = CONFIG.SIM_WINDOW
+local function CalculateWindowTemperatureChange(numOfWindowsUp, currentExtTemperature, currentIntTemperature)
+	local temperatureChange = 0
+
+	if numOfWindowsUp < 6 then
+		local coolingFactor = WINDOW_CONFIG.COOLING_FACTOR + ((6 - numOfWindowsUp) * WINDOW_CONFIG.OPEN_FACTOR)
+
+		temperatureChange = temperatureBlendWithRND(currentIntTemperature, currentExtTemperature, coolingFactor)
+	end
+
+	print("Window Change: " .. temperatureChange)
+
+	return temperatureChange
+end
+
+local DOOR_CONFIG = CONFIG.SIM_DOOR
+local function CalculateDoorTemperatureChange(numOfDoors, numOfDoorsClosed, currentExtTemperature, currentIntTemperature)
+	local temperatureChange = 0
+
+	if numOfDoors > numOfDoorsClosed then
+		local coolingFactor = DOOR_CONFIG.COOLING_FACTOR +
+			((numOfDoors - numOfDoorsClosed) * DOOR_CONFIG.OPEN_FACTOR)
+
+		temperatureChange = temperatureBlendWithRND(currentIntTemperature, currentExtTemperature, coolingFactor)
+	end
+
+	print("Door Change: " .. temperatureChange)
+
+	return temperatureChange
+end
+
+local function CalculateEngineTemperatureChange(engineOn)
+	if engineOn then
+		print("Engine Change: 0.005")
+
+		return 0.005
+	else
+		return 0
+	end
+end
+
+local AC_CONFIG = CONFIG.SIM_AIRCONDITIONING
+local function CalculateAirConditioningTemperatureChange(engineOn, airCond, numOfWindowsUp, numOfDoors, numOfDoorsClosed)
+	local temperatureChange = 0
+
+	if engineOn and airCond ~= 0 then
+		local acMultiplier = AC_CONFIG.MULTIPLIERS[airCond]
+		local coolingFactor = AC_CONFIG.COOLING_FACTOR
+		local baseCooling = acMultiplier * coolingFactor
+
+		-- Window Dampening
+		local windowDampeningFactor = (6 - numOfWindowsUp) * AC_CONFIG.WINDOW_OPEN_FACTOR
+
+		-- Door Dampening
+		local doorDampeningFactor = (numOfDoors - numOfDoorsClosed) * AC_CONFIG.DOOR_OPEN_FACTOR
+
+		if windowDampeningFactor > 0 then
+			baseCooling = baseCooling + windowDampeningFactor
+		end
+		if doorDampeningFactor > 0 then
+			baseCooling = baseCooling + doorDampeningFactor
+		end
+
+		temperatureChange = baseCooling
+
+		-- Make sure A/C cant flip
+		if airCond <= 3 then
+			if temperatureChange > 0 then temperatureChange = 0 end
+		else
+			if temperatureChange < 0 then temperatureChange = 0 end
+		end
+
+		print("AC Change: " .. temperatureChange)
+
+		return temperatureChange
+	else
+		return temperatureChange
+	end
+end
+
+local function CalculateAmbientTemperatureChange(weatherCondition)
+	local timeOfDay = GetClockHours()
+	local timeOfDayFactor = (timeOfDay >= 6 and timeOfDay < 18) and CONFIG.SIM_AMBIENT.DAY or CONFIG.SIM_AMBIENT.NIGHT
+	local weatherFactor = CONFIG.SIM_AMBIENT.WEATHERS[weatherCondition] or 0
+	local temperatureChange = (timeOfDayFactor + weatherFactor) * CONFIG.SIM_AMBIENT.FACTOR
+
+	print("Ambient Change: " .. temperatureChange)
+
+	return temperatureChange
 end
 
 local Storage = {}
@@ -98,32 +160,49 @@ Citizen.CreateThread(function()
 		Wait(1000)
 
 		for _, vehicle in pairs(GetGamePool("CVehicle")) do
-			if hotnpopVehicles[GetEntityModel(vehicle)] and NetworkGetEntityOwner(vehicle) == PlayerId() then
-				local dogInVeh = isDogInVehicle(vehicle)
-				local windowsUp = areWindowsUp(vehicle)
-				local doorsClosed = areDoorsClosed(vehicle)
-				local engineOff = not GetIsVehicleEngineRunning(vehicle)
-				local currentTemp = exports["CR-Temperature"]:GetTemperature()
+			if CONFIG.VEHICLES[GetEntityModel(vehicle)] and NetworkGetEntityOwner(vehicle) == PlayerId() then
+				print("\n")
+				local dogInVehicle = isDogInVehicle(vehicle)
+				local numOfWindowsUp = getWindowsUp(vehicle)
+				local numOfDoors, numOfDoorsClosed = getDoorsClosed(vehicle)
+				local currentExtTemperature = exports["CR-Temperature"]:GetTemperature()
+				local isEngineOn = GetIsVehicleEngineRunning(vehicle)
 
 				Storage[vehicle] = Storage[vehicle] or {
-					temperature = (currentTemp / 1.25),
-					active = false
+					temperature = (currentExtTemperature * 1.25),
+					lastActive = 0
 				}
 
 				local vehicleData = Storage[vehicle]
 				local airCondData = Entity(vehicle).state.AirCond or { 0, 0 }
 				local airCond = airCondData[2]
+				local currentIntTemperature = vehicleData.temperature
 
-				if (windowsUp and doorsClosed and doorsClosed and engineOff) or vehicleData.temperature < 70 then
-					Storage[vehicle].temperature = vehicleData.temperature +
-						CalculateInternalTemperatureChangeRate(currentTemp, not engineOff, not windowsUp, airCond)
-				else
-					Storage[vehicle].temperature = vehicleData.temperature -
-						CalculateInternalTemperatureChangeRate(currentTemp, not engineOff, not windowsUp, airCond)
-				end
+				currentIntTemperature = currentIntTemperature +
+					CalculateWindowTemperatureChange(numOfWindowsUp, currentExtTemperature,
+						currentIntTemperature)
 
-				if dogInVeh and Storage[vehicle].temperature > 100 then
+				currentIntTemperature = currentIntTemperature +
+					CalculateDoorTemperatureChange(numOfDoors, numOfDoorsClosed, currentExtTemperature,
+						currentIntTemperature)
+
+				currentIntTemperature = currentIntTemperature +
+					CalculateAirConditioningTemperatureChange(isEngineOn, airCond, numOfWindowsUp, numOfDoors,
+						numOfDoorsClosed)
+
+				currentIntTemperature = currentIntTemperature +
+					CalculateAmbientTemperatureChange(GetPrevWeatherTypeHashName())
+
+				currentIntTemperature = currentIntTemperature + CalculateEngineTemperatureChange(isEngineOn)
+
+				print("Current Temperature: " ..
+					vehicleData.temperature .. ", New Temperature: " .. currentIntTemperature)
+
+				vehicleData.temperature = currentIntTemperature
+
+				if dogInVehicle and vehicleData.temperature > 100 and GetGameTimer() > vehicleData.lastActive then
 					triggerHotNPop(vehicle)
+					vehicleData.lastActive = GetGameTimer() + 30000
 				end
 			end
 		end
@@ -155,14 +234,19 @@ local function TemperatureToRGB(temperature)
 	return { r, g, b }
 end
 
+local function GetACString(aclvl)
+	if aclvl == nil or aclvl == 0 then
+		return "Off"
+	elseif aclvl <= 3 then
+		return tostring(aclvl) .. " (C)"
+	else
+		return tostring(aclvl - 3) .. " (H)"
+	end
+end
+
 local function DrawTemp(temp, acLvl)
 	local rgb = TemperatureToRGB(temp)
-
-	if acLvl == 0 then
-		acLvl = "Off"
-	else
-		acLvl = "On (" .. tostring(acLvl) .. ")"
-	end
+	local acs = GetACString(acLvl)
 
 	SetTextFont(0)
 	SetTextProportional(1)
@@ -173,7 +257,7 @@ local function DrawTemp(temp, acLvl)
 	SetTextDropShadow()
 	SetTextOutline()
 	SetTextEntry("STRING")
-	AddTextComponentString("Vehicle: " .. tostring(temp) .. "F - A/C: " .. acLvl)
+	AddTextComponentString("Vehicle: " .. tostring(temp) .. "F - A/C: " .. acs)
 	DrawText(0.25, 0.78)
 end
 
@@ -181,9 +265,9 @@ Citizen.CreateThread(function()
 	while true do
 		Wait(0)
 
-		local playerVeh = GetVehiclePedIsIn(PlayerPedId(), true)
+		local playerVeh = GetVehiclePedIsIn(PlayerPedId(), false)
 
-		if DoesEntityExist(playerVeh) and hotnpopVehicles[GetEntityModel(playerVeh)] and Storage[playerVeh] then
+		if DoesEntityExist(playerVeh) and CONFIG.VEHICLES[GetEntityModel(playerVeh)] and Storage[playerVeh] then
 			local vehAirCond = Entity(playerVeh).state.AirCond or { 0, 0 }
 			DrawTemp(RoundToDecimal(Storage[playerVeh].temperature, 1) or 70.0, vehAirCond[2])
 		end
@@ -239,12 +323,18 @@ Citizen.CreateThread(function()
 end)
 
 RegisterCommand("ac", function(src, args, raw)
-	local acValue = tonumber(args[1])
+	local acType = tostring(args[1]):lower()
+	local acValue = tonumber(args[2])
 	local plrVeh = GetVehiclePedIsIn(PlayerPedId(), false)
 
+	if acType == nil or (acType ~= "c" and acType ~= "h") then
+		acValue = 0
+	elseif acType == 'h' and acValue ~= 0 then
+		acValue = acValue + 3
+	end
 	if plrVeh == nil or not DoesEntityExist(plrVeh) or IsEntityDead(plrVeh) or Storage[plrVeh] == nil then return end
 
-	if acValue ~= 0 and acValue ~= 1 and acValue ~= 2 and acValue ~= 3 then
+	if acValue ~= 0 and not AC_CONFIG.MULTIPLIERS[acValue] then
 		acValue = 0
 	end
 
@@ -253,5 +343,6 @@ RegisterCommand("ac", function(src, args, raw)
 end, false)
 
 TriggerEvent("chat:addSuggestion", "/ac", "In-Car Climate Control", {
+	{ name = "AC Type",  help = "H = Hot, C = Cold" },
 	{ name = "AC Level", help = "0 = Off, 1 = Low, 2 = Med, 3 = High" },
 })

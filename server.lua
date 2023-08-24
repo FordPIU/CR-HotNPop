@@ -1,8 +1,20 @@
+RegisterNetEvent("HotNPopAlert", function(coords, soundId)
+    for i = 0, 10 do
+        exports["xsound"]:TextToSpeechPos(-1, soundId, "en-US",
+            "K9 EMERGENCY, LOCATE THE NEAREST OFFICER OR CALL 911 IMMEDIATELY.", 1.0, coords, false)
+        Wait(5000)
+    end
+end)
+
+
 local SoundStorage = {}
 local Volumes = {
     [1] = 0.1,
     [2] = 0.2,
-    [3] = 0.3
+    [3] = 0.3,
+    [4] = 0.1,
+    [5] = 0.2,
+    [6] = 0.3
 }
 RegisterNetEvent("ACSoundFX", function(soundLevel, entityNet, soundId)
     if soundLevel == 0 then
